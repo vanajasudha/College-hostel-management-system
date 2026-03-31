@@ -3,6 +3,7 @@ const router = express.Router();
 const db = require("../config/db");
 const auth = require("../middleware/authMiddleware");
 const role = require("../middleware/roleMiddleware");
+const bcrypt = require("bcryptjs");
 
 // ─── HOSTELS ─────────────────────────────────────────────────────────────────
 
@@ -61,7 +62,11 @@ router.get("/students", auth, role("Admin"), (req, res) => {
         SELECT 
             s.student_id, 
             s.name, 
+            s.roll_number,
+            s.gender,
             s.phone, 
+            s.email,
+            s.department,
             h.hostel_name, 
             r.room_number
         FROM student s
@@ -76,6 +81,54 @@ router.get("/students", auth, role("Admin"), (req, res) => {
         }
         console.log("[adminManage] students returned:", result.length);
         res.json(result);
+    });
+});
+
+// POST add new student (auto creates user account)
+router.post("/students", auth, role("Admin"), async (req, res) => {
+    const { name, gender, phone, email, hostel_id, room_id, roll_number, department } = req.body;
+
+    // Validate required fields
+    if (!name || !roll_number || !department) {
+        return res.status(400).json({ message: "Name, roll_number, and department are required" });
+    }
+
+    // Insert student
+    const studentQuery = `
+        INSERT INTO student (name, gender, phone, email, hostel_id, room_id, roll_number, department)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `;
+    const studentValues = [name, gender, phone, email, hostel_id, room_id, roll_number, department];
+
+    db.query(studentQuery, studentValues, async (err, result) => {
+        if (err) {
+            console.error("[adminManage] POST /students insert student error:", err.message);
+            return res.status(500).json({ error: err.message });
+        }
+
+        const newStudentId = result.insertId;
+
+        // Auto-create user account
+        const hashedPassword = await bcrypt.hash('1234', 10);
+        const userQuery = `
+            INSERT INTO users (login_id, password, role, reference_id)
+            VALUES (?, ?, 'Student', ?)
+            ON DUPLICATE KEY UPDATE reference_id = reference_id
+        `;
+        const userValues = [roll_number, hashedPassword, newStudentId];
+
+        db.query(userQuery, userValues, (userErr, userResult) => {
+            if (userErr) {
+                console.error("[adminManage] POST /students insert user error:", userErr.message);
+                // Don't fail the request if user creation fails, but log it
+            }
+
+            console.log("[adminManage] Student added with ID:", newStudentId);
+            res.status(201).json({
+                message: "Student added successfully",
+                student_id: newStudentId
+            });
+        });
     });
 });
 

@@ -4,6 +4,7 @@ const db = require("../config/db");
 
 const auth = require("../middleware/authMiddleware");
 const role = require("../middleware/roleMiddleware");
+const notifService = require("../utils/notificationService");
 
 // GET all students (Restricted to Warden/Admin)
 router.get("/", auth, role("Warden", "Admin"), (req, res) => {
@@ -32,14 +33,24 @@ router.get("/details", auth, role("Student"), (req, res) => {
     WHERE s.roll_number = ?
   `;
 
-  db.query(query, [roll_number], (err, result) => {
+  db.query(query, [roll_number], async (err, result) => {
     if (err) {
       return res.status(500).json({ message: "DB Error fetching student details", error: err.message });
     }
     if (result.length === 0) {
       return res.status(404).json({ message: "Student details not found." });
     }
-    res.json(result[0] || {}); // Return the single user object, safely
+
+    const student = result[0];
+
+    // Auto fee reminder notifications for pending dues, once per session.
+    try {
+      await notifService.createFeeReminderForStudent(student.student_id);
+    } catch (notifyErr) {
+      console.error("Fee-reminder notification creation failed:", notifyErr.message);
+    }
+
+    res.json(student);
   });
 });
 // LEFT JOIN: Students with or without complaints

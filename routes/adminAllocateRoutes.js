@@ -2,6 +2,7 @@ const express = require("express");
 const router = express.Router();
 const db = require("../config/db");
 const auth = require("../middleware/authMiddleware");
+const notifService = require("../utils/notificationService");
 
 // GET all active allocations across all hostels
 router.get("/", auth, (req, res) => {
@@ -91,7 +92,19 @@ router.put("/assign", auth, (req, res) => {
 
                             db.commit(commitErr => {
                                 if (commitErr) return db.rollback(() => res.status(500).json({ message: "Commit failed." }));
-                                res.json({ message: "Spatial Allocation Successfully Executed." });
+
+                                // Notification for room allocation
+                                db.query(`SELECT room_number FROM room WHERE room_id = ?`, [new_room_id], (errRoom, roomRows) => {
+                                    const roomNumber = (roomRows && roomRows.length > 0) ? roomRows[0].room_number : new_room_id;
+                                    notifService.createNotification({
+                                        student_id,
+                                        title: "Room Allocation Updated",
+                                        message: `You have been allocated Room ${roomNumber}.`,
+                                        type: "room"
+                                    }).catch(e => console.error("Room allocation notification failed:", e.message));
+
+                                    res.json({ message: "Spatial Allocation Successfully Executed." });
+                                });
                             });
                         });
                     });

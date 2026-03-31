@@ -2,6 +2,7 @@ const express = require("express");
 const router = express.Router();
 const db = require("../config/db");
 const auth = require("../middleware/authMiddleware");
+const notifService = require("../utils/notificationService");
 
 // GET all dues globally (with optional hostel_id filter)
 router.get("/dues", auth, (req, res) => {
@@ -54,11 +55,27 @@ router.post("/generate", auth, (req, res) => {
         db.query(insertQuery, [values], (err2, result) => {
             if (err2) return res.status(500).json({ message: "Failed writing Master Dues map.", error: err2.message });
 
-            // Send Notifications globally
-            const notifVals = students.map(s => [s.student_id, `New Invoice: ${category} for ${month} ${year} amounting to ₹${amount} is generated.`]);
-            db.query(`INSERT INTO notifications (student_id, message) VALUES ?`, [notifVals], () => {
-                res.json({ message: `Dues successfully deployed to ${result.affectedRows} students.` });
+            // Send Notifications globally (no duplicates)
+            const sendPromises = students.map((s) => {
+                const message = `New Invoice: ${category} for ${month} ${year} amounting to ₹${amount} is generated.`;
+                return notifService.createNotification({
+                    student_id: s.student_id,
+                    title: "New Pending Dues",
+                    message,
+                    type: "fee"
+                }).catch((e) => {
+                    console.error("Fee notification error for student", s.student_id, e.message);
+                    return { created: false, error: e.message };
+                });
             });
+
+            Promise.all(sendPromises)
+                .then(() => {
+                    res.json({ message: `Dues successfully deployed to ${result.affectedRows} students.` });
+                })
+                .catch(() => {
+                    res.json({ message: `Dues deployed; some notifications may have failed.` });
+                });
         });
     });
 });

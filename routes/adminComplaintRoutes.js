@@ -2,6 +2,7 @@ const express = require("express");
 const router = express.Router();
 const db = require("../config/db");
 const auth = require("../middleware/authMiddleware");
+const notifService = require("../utils/notificationService");
 
 // GET all complaints (Global tracking)
 router.get("/", auth, (req, res) => {
@@ -35,11 +36,20 @@ router.put("/:id", auth, (req, res) => {
         if (err) return res.status(500).json({ message: "Failed replacing complaint constraints.", error: err.message });
         
         // Notify the student regarding change
-        db.query(`SELECT student_id FROM complaint WHERE complaint_id = ?`, [complaint_id], (err2, res2) => {
+        db.query(`SELECT student_id FROM complaint WHERE complaint_id = ?`, [complaint_id], async (err2, res2) => {
             if (!err2 && res2.length > 0) {
                 const sid = res2[0].student_id;
-                db.query(`INSERT INTO notifications (student_id, message) VALUES (?, ?)`, 
-                         [sid, `Your complaint #${complaint_id} was updated. Status: ${status}`]);
+
+                try {
+                    await notifService.createNotification({
+                        student_id: sid,
+                        title: "Complaint Status Updated",
+                        message: `Your complaint #${complaint_id} is now ${status}.`,
+                        type: "complaint"
+                    });
+                } catch (notifErr) {
+                    console.error("Failed to store complaint notification:", notifErr.message);
+                }
             }
             res.json({ message: "Master complaint successfully processed." });
         });

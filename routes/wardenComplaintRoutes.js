@@ -49,6 +49,21 @@ router.put("/:id", auth, role("Warden"), (req, res) => {
 
     db.query(query, values, (err) => {
         if (err) return res.status(500).json(err);
+
+        // Notify student that status changed
+        if (status) {
+            db.query("SELECT student_id, description FROM complaint WHERE complaint_id = ?", [complaint_id], (err2, rows) => {
+                if (!err2 && rows.length > 0) {
+                    const studentId = rows[0].student_id;
+                    const description = rows[0].description;
+                    const message = `Your complaint '${description}' is now ${status}.`;
+
+                    const notifService = require("../utils/notificationService");
+                    notifService.createNotification({ student_id: studentId, title: "Complaint status update", message, type: "complaint" }).catch(e => console.error("Notification error:", e.message));
+                }
+            });
+        }
+
         res.json({ message: "Complaint details updated successfully" });
     });
 });

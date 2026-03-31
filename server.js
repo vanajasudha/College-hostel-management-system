@@ -150,6 +150,10 @@ app.use("/api/admin/complaints", adminComplaintRoutes);
 const adminNotificationRoutes = require("./routes/adminNotificationRoutes");
 app.use("/api/admin/notifications", adminNotificationRoutes);
 
+// ✅ Student Notifications API
+const notificationsRoutes = require("./routes/notificationsRoutes");
+app.use("/api/notifications", notificationsRoutes);
+
 // ✅ Admin analytics
 const adminAnalyticsRoutes = require("./routes/adminAnalyticsRoutes");
 app.use("/api/admin/analytics", adminAnalyticsRoutes);
