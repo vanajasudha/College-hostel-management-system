@@ -3,7 +3,10 @@ const cors = require("cors");
 require("dotenv").config();
 
 // ✅ Database connection
-require("./config/db");
+const db = require("./config/db");
+
+// ✅ Import overdue scheduler (starts cron jobs)
+require("./overdue-scheduler");
 
 // ✅ Import routes
 const studentRoutes = require("./routes/studentRoutes");
@@ -26,53 +29,61 @@ app.use("/api/students", studentRoutes);
 
 // ✅ Pending Dues API
 const auth = require("./middleware/authMiddleware");
+const duesRoutes = require("./routes/duesRoutes");
+app.use("/api", duesRoutes);
+
 // Real-time Database-Driven Dues Summary
 app.get("/api/student/dues-summary", auth, (req, res) => {
   const student_id = req.user.reference_id;
 
   const query = `
-    SELECT month, category, amount, status
+    SELECT month, year, category, amount, status, due_date, paid_at
     FROM dues
     WHERE student_id = ?
+    ORDER BY year DESC, FIELD(month, 'January','February','March','April','May','June','July','August','September','October','November','December')
   `;
 
-  const db = require("./config/db");
   db.query(query, [student_id], (err, result) => {
-    if (err) return res.status(500).json({ message: err.message });
+    if (err) {
+      console.error("[Dues Summary] Query error:", err);
+      return res.status(500).json({ message: "Failed to retrieve dues summary" });
+    }
+
+    // Group by month, year
+    const grouped = {};
+    result.forEach(row => {
+      const key = `${row.month}-${row.year}`;
+      if (!grouped[key]) {
+        grouped[key] = { month: row.month, year: row.year, total_amount: 0, status: 'paid', items: [], due_date: row.due_date };
+      }
+      grouped[key].items.push({ category: row.category, amount: Number(row.amount) });
+      grouped[key].total_amount += Number(row.amount);
+      if (row.status === 'unpaid' || row.status === 'overdue') grouped[key].status = row.status;
+    });
+
+    const detailedMonths = Object.values(grouped);
 
     let total_due = 0;
+    let overdue_count = 0;
     const pending_months = new Set();
     const paid_months = new Set();
 
-    // Group exactly as required by the Modal
-    const detailedDuesMap = {};
-
-    result.forEach(row => {
-      const amt = Number(row.amount);
-      if (row.status === 'unpaid') {
-        total_due += amt;
-        pending_months.add(row.month);
-
-        if (!detailedDuesMap[row.month]) detailedDuesMap[row.month] = [];
-        detailedDuesMap[row.month].push({ type: row.category, amount: amt });
-
-      } else if (row.status === 'paid') {
-        paid_months.add(row.month);
+    detailedMonths.forEach(m => {
+      if (m.status === 'unpaid' || m.status === 'overdue') {
+        total_due += m.total_amount;
+        pending_months.add(`${m.month}-${m.year}`);
+        if (m.status === 'overdue') overdue_count++;
       }
+      if (m.status === 'paid') paid_months.add(`${m.month}-${m.year}`);
     });
-
-    // Convert grouping map to the array expected by frontend
-    const detailedPendingMonths = Object.keys(detailedDuesMap).map(m => ({
-      month: m,
-      dues: detailedDuesMap[m]
-    }));
 
     res.json({
       total_due,
       pending_months: pending_months.size,
       paid_months: paid_months.size,
+      overdue_count,
       total_months: new Set([...pending_months, ...paid_months]).size,
-      detailedPendingMonths
+      detailedMonths
     });
   });
 });

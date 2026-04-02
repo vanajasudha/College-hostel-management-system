@@ -15,8 +15,8 @@ router.get("/", auth, (req, res) => {
         SELECT month, SUM(amount) as revenue 
         FROM dues 
         WHERE status = 'paid' 
-        GROUP BY year, month 
-        ORDER BY year DESC, FIELD(month, 'December','November','October','September','August','July','June','May','April','March','February','January') DESC 
+        GROUP BY month 
+        ORDER BY FIELD(month, 'December','November','October','September','August','July','June','May','April','March','February','January') DESC 
         LIMIT 6
     `;
 
@@ -28,19 +28,31 @@ router.get("/", auth, (req, res) => {
 
     // Run queries in parallel
     db.query(queryOccupancy, (err1, resOcc) => {
-        if (err1) return res.status(500).json({ message: "Failed parsing global occupancy." });
+        if (err1) {
+            console.error("[Admin Analytics] Occupancy query error:", err1);
+            return res.status(500).json({ message: "Failed to load occupancy data" });
+        }
 
         db.query(queryRevenue, (err2, resRev) => {
-            if (err2) return res.status(500).json({ message: "Failed parsing revenue trends." });
+            if (err2) {
+                console.error("[Admin Analytics] Revenue query error:", err2);
+                resRev = [];
+            }
 
             db.query(queryDues, (err3, resDues) => {
-                if (err3) return res.status(500).json({ message: "Failed parsing dues split." });
+                if (err3) {
+                    console.error("[Admin Analytics] Dues query error:", err3);
+                    resDues = [];
+                }
 
                 db.query(queryComplaints, (err4, resComp) => {
-                    if (err4) return res.status(500).json({ message: "Failed parsing grievance rates." });
+                    if (err4) {
+                        console.error("[Admin Analytics] Complaints query error:", err4);
+                        resComp = [];
+                    }
 
                     // Process Data
-                    const capacityData = resOcc[0] || { total_capacity: 0, occupied_beds: 0 };
+                    const capacityData = (resOcc && resOcc[0]) || { total_capacity: 0, occupied_beds: 0 };
                     
                     // Format output payload explicitly for Chart.js
                     res.json({
@@ -50,9 +62,9 @@ router.get("/", auth, (req, res) => {
                             occupancy_rate: capacityData.total_capacity > 0 ? Math.round((capacityData.occupied_beds / capacityData.total_capacity) * 100) : 0
                         },
                         charts: {
-                            revenue: resRev.reverse(), // Chronological formulation
-                            dues: resDues,
-                            complaints: resComp
+                            revenue: (resRev || []).reverse(), // Chronological formulation
+                            dues: resDues || [],
+                            complaints: resComp || []
                         }
                     });
                 });

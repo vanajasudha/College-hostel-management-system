@@ -7,7 +7,7 @@ const auth = require("../middleware/authMiddleware");
 router.get("/", auth, (req, res) => {
     if (req.user.role !== "Admin") return res.status(403).json({ message: "Admin access required" });
 
-    db.query(`SELECT notification_id, student_id, title, message, type, is_read, created_at FROM notifications WHERE student_id IS NULL ORDER BY created_at DESC LIMIT 100`, (err, results) => {
+    db.query(`SELECT id as notification_id, student_id, title, message, type, is_read, created_at FROM notifications WHERE student_id IS NULL ORDER BY created_at DESC LIMIT 100`, (err, results) => {
         if (err) return res.status(500).json({ message: "Database Error", error: err.message });
         res.json(results);
     });
@@ -17,7 +17,7 @@ router.get("/", auth, (req, res) => {
 router.put("/:id/read", auth, (req, res) => {
     if (req.user.role !== "Admin") return res.status(403).json({ message: "Admin access required" });
 
-    db.query(`UPDATE notifications SET is_read = TRUE WHERE notification_id = ? AND student_id IS NULL`, [req.params.id], (err) => {
+    db.query(`UPDATE notifications SET is_read = TRUE WHERE id = ? AND student_id IS NULL`, [req.params.id], (err) => {
         if (err) return res.status(500).json({ message: "Error updating notification", error: err.message });
         res.json({ message: "Notification marked as read" });
     });

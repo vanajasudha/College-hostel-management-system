@@ -45,7 +45,20 @@ router.get("/:id", auth, role("Warden"), (req, res) => {
         const student = stuRes[0];
 
         const duesQuery = new Promise((resolve) => {
-            db.query(`SELECT month, year, category, amount, status FROM dues WHERE student_id = ? ORDER BY year DESC, month DESC`, [student_id], (e, r) => resolve(r || []));
+            db.query(`SELECT month, year, category, amount, status FROM dues WHERE student_id = ? ORDER BY year DESC, FIELD(month, 'January','February','March','April','May','June','July','August','September','October','November','December')`, [student_id], (e, r) => {
+              // Group by month/year
+              const grouped = {};
+              (r || []).forEach(row => {
+                const key = `${row.month}-${row.year}`;
+                if (!grouped[key]) {
+                  grouped[key] = { month: row.month, year: row.year, total_amount: 0, status: 'paid', items: [] };
+                }
+                grouped[key].items.push({ category: row.category, amount: Number(row.amount) });
+                grouped[key].total_amount += Number(row.amount);
+                if (row.status === 'unpaid') grouped[key].status = 'unpaid';
+              });
+              resolve(Object.values(grouped));
+            });
         });
 
         const complaintsQuery = new Promise((resolve) => {

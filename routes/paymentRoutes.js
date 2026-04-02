@@ -11,6 +11,7 @@ router.get("/", auth, role("Admin"), (req, res) => {
            MONTHNAME(p.payment_date) AS month,
            p.amount,
            p.method,
+           p.category,
            p.status,
            p.payment_date
     FROM payment p
@@ -38,6 +39,30 @@ router.get("/total", auth, role("Admin"), (req, res) => {
     const total = result?.[0]?.total || 0;
     console.log("[paymentRoutes] /api/payments/total total:", total);
     res.json({ total });
+  });
+});
+
+router.get("/all", auth, role("Admin"), (req, res) => {
+  const q = `
+    SELECT p.transaction_id,
+           s.name AS student_name,
+           p.category,
+           p.amount,
+           p.method,
+           p.status,
+           p.payment_date
+    FROM payment p
+    LEFT JOIN student s ON p.student_id = s.student_id
+    ORDER BY p.payment_date DESC
+    LIMIT 2000
+  `;
+
+  db.query(q, (err, result) => {
+    if (err) {
+      console.error("[paymentRoutes] GET /api/payments/all:", err.message);
+      return res.status(500).json({ error: err.message });
+    }
+    res.json(result);
   });
 });
 

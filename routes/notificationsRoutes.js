@@ -22,7 +22,7 @@ router.get('/:student_id', auth, (req, res) => {
   }
 
   const query = `
-    SELECT notification_id, student_id, title, message, type, is_read, created_at
+    SELECT id as notification_id, student_id, title, message, type, is_read, created_at
     FROM notifications
     WHERE (student_id = ? OR student_id IS NULL)
     ORDER BY created_at DESC
@@ -56,7 +56,7 @@ router.put('/read/:id', auth, (req, res) => {
   if (!id) return res.status(400).json({ message: 'Notification id required' });
 
   // allow admin/warden to mark any, student only own
-  const ownershipQuery = `SELECT student_id FROM notifications WHERE notification_id = ?`;
+  const ownershipQuery = `SELECT student_id FROM notifications WHERE id = ?`;
   db.query(ownershipQuery, [id], (err, rows) => {
     if (err) return res.status(500).json({ message: 'Error fetching notification', error: err.message });
     if (rows.length === 0) return res.status(404).json({ message: 'Notification not found' });
@@ -67,7 +67,7 @@ router.put('/read/:id', auth, (req, res) => {
     }
 
     db.query(
-      `UPDATE notifications SET is_read = TRUE WHERE notification_id = ?`,
+      `UPDATE notifications SET is_read = TRUE WHERE id = ?`,
       [id],
       (err2) => {
         if (err2) return res.status(500).json({ message: 'Error updating notification', error: err2.message });
@@ -77,17 +77,23 @@ router.put('/read/:id', auth, (req, res) => {
   });
 });
 
-// POST create notification (Admin)
-router.post('/', auth, role('Admin'), async (req, res) => {
+// POST create notification (Admin or Warden)
+router.post('/', auth, role('Admin', 'Warden'), async (req, res) => {
   try {
     const { student_id, title, message, type = 'general' } = req.body;
 
     if (!title || !message || !type) return res.status(400).json({ message: 'title, message and type are required' });
 
+    console.log('[notifications] creating by', req.user.role, 'for student_id', student_id, 'title', title);
     const result = await notifService.createNotification({ student_id: student_id || null, title, message, type });
+
     const statusCode = result.created ? 201 : 200;
-    res.status(statusCode).json({ message: result.created ? 'Notification created' : 'Notification already exists', ...result });
+    const msgOut = result.created ? 'Notification created' : 'Notification already exists';
+    console.log('[notifications] create result', result);
+
+    res.status(statusCode).json({ message: msgOut, ...result });
   } catch (error) {
+    console.error('[notifications] create error', error);
     res.status(500).json({ message: 'Error creating notification', error: error.message });
   }
 });

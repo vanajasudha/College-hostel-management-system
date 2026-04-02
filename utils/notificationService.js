@@ -7,31 +7,50 @@ module.exports = {
         return reject(new Error('title, message and type are required for notification creation.'));
       }
 
-      const checkQuery = `
-        SELECT notification_id
-        FROM notifications
-        WHERE student_id <=> ?
-          AND title = ?
-          AND message = ?
-          AND type = ?
-        LIMIT 1
-      `;
-
-      db.query(checkQuery, [student_id, title, message, type], (chkErr, chkRes) => {
-        if (chkErr) return reject(chkErr);
-
-        if (chkRes.length > 0) {
-          return resolve({ created: false, reason: 'exists' });
+      const checkStudent = (next) => {
+        if (student_id === null || student_id === undefined) {
+          return next();
         }
 
-        const insertQuery = `
-          INSERT INTO notifications (student_id, title, message, type, is_read)
-          VALUES (?, ?, ?, ?, FALSE)
+        db.query(`SELECT student_id FROM student WHERE student_id = ?`, [student_id], (stErr, stRes) => {
+          if (stErr) return reject(stErr);
+          if (!stRes.length) return reject(new Error(`Student ${student_id} not found`));
+          next();
+        });
+      };
+
+      checkStudent(() => {
+        const checkQuery = `
+          SELECT id
+          FROM notifications
+          WHERE student_id <=> ?
+            AND title = ?
+            AND message = ?
+            AND type = ?
+          LIMIT 1
         `;
 
-        db.query(insertQuery, [student_id, title, message, type], (insErr, insRes) => {
-          if (insErr) return reject(insErr);
-          resolve({ created: true, notification_id: insRes.insertId });
+        db.query(checkQuery, [student_id, title, message, type], (chkErr, chkRes) => {
+          if (chkErr) return reject(chkErr);
+
+          if (chkRes.length > 0) {
+            return resolve({ created: false, reason: 'exists' });
+          }
+
+          const insertQuery = `
+            INSERT INTO notifications (student_id, title, message, type, is_read)
+            VALUES (?, ?, ?, ?, FALSE)
+          `;
+
+          db.query(insertQuery, [student_id, title, message, type], (insErr, insRes) => {
+            if (insErr) {
+              console.error('[NOTIFICATION] SQL Error creating notification:', insErr.message);
+              console.error('[NOTIFICATION] Query:', insertQuery);
+              console.error('[NOTIFICATION] Params:', [student_id, title, message, type]);
+              return reject(insErr);
+            }
+            resolve({ created: true, notification_id: insRes.insertId });
+          });
         });
       });
     });
@@ -44,7 +63,7 @@ module.exports = {
       const duesQuery = `
         SELECT COALESCE(SUM(amount), 0) AS pending_amount
         FROM dues
-        WHERE student_id = ? AND status IN ('Pending', 'unpaid')
+        WHERE student_id = ? AND status = 'unpaid'
       `;
 
       db.query(duesQuery, [student_id], async (err, rows) => {

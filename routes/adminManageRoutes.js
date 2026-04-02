@@ -36,6 +36,7 @@ router.get("/rooms", auth, role("Admin"), (req, res) => {
         SELECT 
             r.room_id,
             r.room_number,
+            r.hostel_id,
             h.hostel_name,
             r.capacity,
             r.status,
@@ -51,6 +52,71 @@ router.get("/rooms", auth, role("Admin"), (req, res) => {
         }
         console.log("[adminManage] rooms returned:", result.length);
         res.json(result);
+    });
+});
+
+// POST create room
+router.post("/rooms", auth, role("Admin"), (req, res) => {
+    const room_number = Number(req.body.room_number);
+    const capacity = Number(req.body.capacity);
+    const hostel_id = req.body.hostel_id != null ? Number(req.body.hostel_id) : null;
+    const status = req.body.status === "Maintenance" ? "Maintenance" : "Available";
+
+    if (!Number.isFinite(room_number) || !Number.isFinite(capacity) || capacity < 1 || !Number.isFinite(hostel_id)) {
+        return res.status(400).json({ message: "Valid room_number, capacity (≥1), and hostel_id are required" });
+    }
+
+    const q = `INSERT INTO room (room_number, capacity, hostel_id, status) VALUES (?, ?, ?, ?)`;
+    db.query(q, [room_number, capacity, hostel_id, status], (err, result) => {
+        if (err) {
+            console.error("[adminManage] POST /rooms →", err.message);
+            return res.status(500).json({ error: err.message });
+        }
+        res.status(201).json({ message: "Room created", room_id: result.insertId });
+    });
+});
+
+// PUT update room
+router.put("/rooms/:roomId", auth, role("Admin"), (req, res) => {
+    const roomId = Number(req.params.roomId);
+    const room_number = Number(req.body.room_number);
+    const capacity = Number(req.body.capacity);
+    const hostel_id = req.body.hostel_id != null ? Number(req.body.hostel_id) : null;
+    const status = req.body.status === "Maintenance" ? "Maintenance" : "Available";
+
+    if (!Number.isFinite(roomId) || !Number.isFinite(room_number) || !Number.isFinite(capacity) || capacity < 1 || !Number.isFinite(hostel_id)) {
+        return res.status(400).json({ message: "Valid room_number, capacity (≥1), and hostel_id are required" });
+    }
+
+    const sel = `
+        SELECT r.hostel_id,
+               (SELECT COUNT(*) FROM student s WHERE s.room_id = r.room_id) AS occupied
+        FROM room r WHERE r.room_id = ?
+    `;
+    db.query(sel, [roomId], (selErr, rows) => {
+        if (selErr) {
+            console.error("[adminManage] PUT /rooms sel →", selErr.message);
+            return res.status(500).json({ error: selErr.message });
+        }
+        if (!rows || !rows.length) {
+            return res.status(404).json({ message: "Room not found" });
+        }
+        const occupied = Number(rows[0].occupied) || 0;
+        if (capacity < occupied) {
+            return res.status(400).json({ message: `Capacity cannot be less than occupied beds (${occupied})` });
+        }
+        if (occupied > 0 && Number(rows[0].hostel_id) !== hostel_id) {
+            return res.status(400).json({ message: "Cannot change hostel while students are assigned to this room" });
+        }
+
+        const upd = `UPDATE room SET room_number = ?, capacity = ?, hostel_id = ?, status = ? WHERE room_id = ?`;
+        db.query(upd, [room_number, capacity, hostel_id, status, roomId], (updErr) => {
+            if (updErr) {
+                console.error("[adminManage] PUT /rooms →", updErr.message);
+                return res.status(500).json({ error: updErr.message });
+            }
+            res.json({ message: "Room updated" });
+        });
     });
 });
 
@@ -153,7 +219,7 @@ router.get("/payments/history", auth, role("Admin"), (req, res) => {
     const q = `
         SELECT p.transaction_id, s.name AS student_name,
                MONTHNAME(p.payment_date) AS month, p.amount, p.method,
-               p.status, p.payment_date
+               p.category, p.status, p.payment_date
         FROM payment p
         LEFT JOIN student s ON p.student_id = s.student_id
         ORDER BY p.payment_date DESC

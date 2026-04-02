@@ -1,115 +1,122 @@
 const express = require("express");
 const router = express.Router();
 const db = require("../config/db");
-const bcrypt = require("bcryptjs");
+const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
+const { validatePassword } = require("../utils/validatePassword");
+
+function serverError(res, err, logLabel) {
+  const message = err && err.message != null ? String(err.message) : String(err);
+  if (logLabel) {
+    console.error(`[auth] ${logLabel}:`, message);
+  }
+  return res.status(500).json({
+    success: false,
+    message: "Server error",
+    error: message,
+  });
+}
 
 /*
-  LOGIN API
-  Supports:
-  - Student (roll_number)
-  - Warden (employee_id)
-  - Admin (username)
+  LOGIN — plain text or bcrypt ($2a$...) passwords
 */
-
-router.post("/login", async (req, res) => {
+router.post("/login", (req, res) => {
   try {
     const { login_id, password } = req.body;
 
-    // Basic validation
     if (!login_id || !password) {
       return res.status(400).json({
+        success: false,
         message: "Login ID and password are required",
       });
     }
 
     const normalizedLoginId = String(login_id).trim();
-
-    // Find user by normalized login_id, avoiding whitespace and casing issues
-    const query = "SELECT * FROM users WHERE TRIM(login_id) = ?";
+    const query =
+      "SELECT * FROM users WHERE TRIM(login_id) = ? LIMIT 1";
 
     db.query(query, [normalizedLoginId], async (err, result) => {
       if (err) {
-        return res.status(500).json({ error: err });
+        return serverError(res, err, "login query");
       }
 
-      if (result.length === 0) {
+      if (!result || result.length === 0) {
         return res.status(401).json({
+          success: false,
           message: "Invalid login ID",
         });
       }
 
       const user = result[0];
 
-      const inputPassword = String(password).trim();
-      const dbPassword = String(user.password).trim();
-      
-      console.log("input password:", inputPassword);
-      console.log("database password:", dbPassword);
-      console.log("user object:", user);
+      const isValid = await validatePassword(password, user.password);
 
-      // Compare password (support both plain text and hashed for migration)
-      let isMatch = false;
-      if (dbPassword.startsWith('$2a$') || dbPassword.startsWith('$2b$') || dbPassword.startsWith('$2y$')) {
-        // Hashed password
-        isMatch = await bcrypt.compare(inputPassword, dbPassword);
-      } else {
-        // Plain text password
-        isMatch = inputPassword === dbPassword;
-      }
-
-      if (!isMatch) {
+      if (!isValid) {
         return res.status(401).json({
+          success: false,
           message: "Invalid password",
         });
       }
 
       const signAndSendToken = (additionalPayload = {}) => {
+        if (!process.env.JWT_SECRET) {
+          console.error("[auth] JWT_SECRET is not set");
+          return res.status(500).json({
+            success: false,
+            message: "Server configuration error",
+          });
+        }
+
         const token = jwt.sign(
           {
             user_id: user.user_id,
             login_id: user.login_id,
             role: user.role,
             reference_id: user.reference_id,
-            ...additionalPayload
+            ...additionalPayload,
           },
           process.env.JWT_SECRET,
           { expiresIn: "1d" }
         );
 
-        res.json({
+        return res.json({
           message: "Login successful",
           token,
           role: user.role,
           reference_id: user.reference_id,
-          ...additionalPayload
+          ...additionalPayload,
         });
       };
 
       if (user.role === "Warden") {
-        // As requested: When a warden logs in, fetch their record from the warden table using employee_id
-        db.query("SELECT hostel_id FROM warden WHERE employee_id = ?", [user.login_id], (err, wardenRes) => {
-          if (err) return res.status(500).json({ error: err });
-          if (wardenRes.length === 0) return res.status(404).json({ message: "Warden record not found in system." });
-          
-          signAndSendToken({ hostel_id: wardenRes[0].hostel_id });
-        });
-      } else {
-        signAndSendToken();
+        db.query(
+          "SELECT hostel_id FROM warden WHERE employee_id = ?",
+          [user.login_id],
+          (wardenErr, wardenRes) => {
+            if (wardenErr) {
+              return serverError(res, wardenErr, "warden lookup");
+            }
+            if (!wardenRes || wardenRes.length === 0) {
+              return res.status(404).json({
+                success: false,
+                message: "Warden record not found in system.",
+              });
+            }
+            return signAndSendToken({ hostel_id: wardenRes[0].hostel_id });
+          }
+        );
+        return;
       }
 
+      return signAndSendToken();
     });
   } catch (error) {
-    res.status(500).json({
-      message: "Server error",
-      error,
-    });
+    return serverError(res, error, "login");
   }
 });
 
 /*
-  FORGOT PASSWORD API
-  Generates a temporary 6-digit password and updates user password
+  FORGOT PASSWORD — always store bcrypt hash (default reset: 1234)
 */
 router.post("/forgot-password", (req, res) => {
   try {
@@ -117,111 +124,106 @@ router.post("/forgot-password", (req, res) => {
 
     if (!login_id) {
       return res.status(400).json({
+        success: false,
         message: "Login ID is required",
       });
     }
 
     const normalizedLoginId = String(login_id).trim();
 
-    // Check if user exists
     db.query(
-      "SELECT u.user_id, u.reference_id, s.email FROM users u LEFT JOIN student s ON u.reference_id = s.student_id WHERE TRIM(u.login_id) = ?",
+      "SELECT u.user_id FROM users u WHERE TRIM(u.login_id) = ? LIMIT 1",
       [normalizedLoginId],
-      async (err, result) => {
-        if (err) {
-          return res.status(500).json({ error: err });
+      async (qErr, result) => {
+        if (qErr) {
+          return serverError(res, qErr, "forgot-password query");
         }
 
-        if (result.length === 0) {
+        if (!result || result.length === 0) {
           return res.status(404).json({
+            success: false,
             message: "User not found",
           });
         }
 
-        const user = result[0];
-        
-        // Generate 6-digit temporary password
-        const tempPassword = Math.floor(100000 + Math.random() * 900000).toString();
+        const row = result[0];
+        const newPassword = "1234";
 
-        // Hash the temporary password
-        const hashedPassword = await bcrypt.hash(tempPassword, 10);
+        let hashed;
+        try {
+          hashed = await bcrypt.hash(newPassword, 10);
+        } catch (hashErr) {
+          return serverError(res, hashErr, "forgot-password hash");
+        }
 
-        // Update password in database
         db.query(
           "UPDATE users SET password = ? WHERE user_id = ?",
-          [hashedPassword, user.user_id],
-          (err) => {
-            if (err) {
-              return res.status(500).json({ error: err });
+          [hashed, row.user_id],
+          (updErr) => {
+            if (updErr) {
+              return serverError(res, updErr, "forgot-password update");
             }
 
-            // Log the temp password for demo (in production, send via email)
-            console.log(`Temporary password for ${normalizedLoginId}: ${tempPassword}`);
-
-            res.json({
-              message: "Temporary password generated successfully",
-              tempPassword: tempPassword,
-              note: "Your temporary password has been generated. Use it to login and then change it immediately.",
+            return res.json({
+              success: true,
+              message: "Password reset successfully",
+              tempPassword: newPassword,
+              note: "Sign in with this password. Change it after logging in if your profile supports updates.",
             });
           }
         );
       }
     );
   } catch (error) {
-    res.status(500).json({
-      message: "Server error",
-      error,
-    });
+    return serverError(res, error, "forgot-password");
   }
 });
 
 /*
-  CONTACT ADMIN API
-  Stores contact messages from users
+  CONTACT ADMIN
 */
 router.post("/contact-admin", (req, res) => {
   try {
     const { name, email, message } = req.body;
 
-    // Validation
     if (!name || !email || !message) {
       return res.status(400).json({
+        success: false,
         message: "Name, email, and message are required",
       });
     }
 
     if (!email.includes("@")) {
       return res.status(400).json({
+        success: false,
         message: "Invalid email format",
       });
     }
 
     if (message.trim().length < 10) {
       return res.status(400).json({
+        success: false,
         message: "Message must be at least 10 characters long",
       });
     }
 
-    // Insert into contact_messages table
     db.query(
       "INSERT INTO contact_messages (name, email, message) VALUES (?, ?, ?)",
       [name, email, message],
-      (err, result) => {
-        if (err) {
-          return res.status(500).json({ error: err });
+      (insErr, insResult) => {
+        if (insErr) {
+          return serverError(res, insErr, "contact-admin insert");
         }
 
-        res.json({
+        return res.json({
+          success: true,
           message: "Your message has been sent to admin successfully",
-          id: result.insertId,
+          id: insResult.insertId,
         });
       }
     );
   } catch (error) {
-    res.status(500).json({
-      message: "Server error",
-      error,
-    });
+    return serverError(res, error, "contact-admin");
   }
 });
 
