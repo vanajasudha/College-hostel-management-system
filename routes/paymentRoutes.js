@@ -1,9 +1,33 @@
+/**
+ * PAYMENT ROUTES
+ *
+ * Handles payment-related operations and data retrieval.
+ * Provides payment history, totals, and transaction management.
+ *
+ * Endpoints:
+ * - GET /api/payments - Get recent payments with student details (Admin only)
+ * - GET /api/payments/total - Get total payment amount (Admin only)
+ * - GET /api/payments/all - Get all payments with full details (Admin only)
+ *
+ * Authentication: JWT required for all endpoints
+ * Access: Restricted to Admin role for financial data privacy
+ */
+
 const express = require("express");
 const router = express.Router();
-const db = require("../config/db");
-const auth = require("../middleware/authMiddleware");
-const role = require("../middleware/roleMiddleware");
+const db = require("../config/db");                    // Database connection
+const auth = require("../middleware/authMiddleware");  // JWT authentication
+const role = require("../middleware/roleMiddleware");  // Role-based access control
 
+/**
+ * GET RECENT PAYMENTS
+ * GET /api/payments
+ *
+ * Returns recent payment transactions with student information.
+ * Limited to 1000 records for performance, ordered by date descending.
+ *
+ * Includes: transaction ID, student name, month, amount, method, category, status, date
+ */
 router.get("/", auth, role("Admin"), (req, res) => {
   const q = `
     SELECT p.transaction_id,
@@ -29,6 +53,15 @@ router.get("/", auth, role("Admin"), (req, res) => {
   });
 });
 
+/**
+ * GET TOTAL PAYMENT AMOUNT
+ * GET /api/payments/total
+ *
+ * Returns the sum of all paid payments in the system.
+ * Used for financial reporting and dashboard KPIs.
+ *
+ * Only includes payments with status = 'Paid'
+ */
 router.get("/total", auth, role("Admin"), (req, res) => {
   const q = `SELECT COALESCE(SUM(amount), 0) AS total FROM payment WHERE status = 'Paid'`;
   db.query(q, (err, result) => {
@@ -42,6 +75,15 @@ router.get("/total", auth, role("Admin"), (req, res) => {
   });
 });
 
+/**
+ * GET ALL PAYMENTS
+ * GET /api/payments/all
+ *
+ * Returns complete payment history with full details.
+ * Higher limit (2000) for comprehensive financial reporting.
+ *
+ * Includes: transaction ID, student name, category, amount, method, status, date
+ */
 router.get("/all", auth, role("Admin"), (req, res) => {
   const q = `
     SELECT p.transaction_id,
@@ -66,4 +108,6 @@ router.get("/all", auth, role("Admin"), (req, res) => {
   });
 });
 
+// EXPORT ROUTER
+// Makes payment routes available for mounting in main server.js
 module.exports = router;

@@ -1,9 +1,23 @@
 const express = require("express");
 const router = express.Router();
 const db = require("../config/db");
+const notifService = require("../utils/notificationService");
 
 const auth = require("../middleware/authMiddleware");
 const role = require("../middleware/roleMiddleware");
+
+// Utility: Send notification in a non-blocking way
+const sendNotification = async ({ student_id, title, message, type = 'fee' }) => {
+  try {
+    const result = await notifService.createNotification({ student_id, title, message, type });
+    if (!result.created) {
+      // Already exists; skip silently
+      console.info(`[Payment Notification] not created (duplicate): student ${student_id}`);
+    }
+  } catch (notifErr) {
+    console.error(`[Payment Notification] failed for student ${student_id}:`, notifErr.message);
+  }
+};
 
 // Pay due for month & year using dues table
 router.post("/", auth, role("Student"), (req, res) => {
@@ -60,10 +74,18 @@ router.post("/", auth, role("Student"), (req, res) => {
       if (shouldMarkPaid) {
         db.query(`UPDATE dues SET status = 'paid', paid_at = NOW() WHERE student_id = ? AND month = ? AND year = ? AND status = 'unpaid'`, [student_id, month, Number(year)], (updErr) => {
           if (updErr) return res.status(500).json({ message: updErr.message });
+
+          const message = `Payment of ₹${paidAmount} received for ${month} ${year}. Your dues are now marked as paid.`;
+          sendNotification({ student_id, title: 'Payment Successful', message, type: 'fee' });
+
           return res.json({ message: "Payment recorded", month, year, amount: paidAmount, transaction_id, payment_type: paymentType, category: paymentCategory });
         });
       } else {
-        return res.json({ message: "Custom payment recorded (partial)", month, year, amount: paidAmount, transaction_id, payment_type: paymentType, category: paymentCategory, remaining_due: total_amount - paidAmount });
+        const remaining = total_amount - paidAmount;
+        const message = `Partial payment of ₹${paidAmount} received for ${month} ${year}. Remaining due ₹${remaining}.`;
+        sendNotification({ student_id, title: 'Partial Payment Recorded', message, type: 'fee' });
+
+        return res.json({ message: "Custom payment recorded (partial)", month, year, amount: paidAmount, transaction_id, payment_type: paymentType, category: paymentCategory, remaining_due: remaining });
       }
     });
   });

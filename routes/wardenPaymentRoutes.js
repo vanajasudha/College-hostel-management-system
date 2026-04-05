@@ -207,4 +207,30 @@ router.get("/unpaid-students", auth, role("Warden"), (req, res) => {
     });
 });
 
+/*
+  WARDEN: All payments for hostel students
+*/
+router.get("/all", auth, role("Warden"), (req, res) => {
+  const hostel_id = req.user.hostel_id;
+  if (!hostel_id) return res.status(403).json({ message: "No active hostel assignment found in token." });
+
+  const query = `
+    SELECT p.transaction_id, s.name AS student_name, p.category,
+           p.amount, p.method, p.status, p.payment_date
+    FROM payment p
+    JOIN student s ON p.student_id = s.student_id
+    WHERE s.hostel_id = ?
+    ORDER BY p.payment_date DESC
+    LIMIT 2000
+  `;
+
+  db.query(query, [hostel_id], (err, result) => {
+    if (err) {
+      console.error("[Warden All Payments] Query error:", err);
+      return res.status(500).json({ message: "Failed to retrieve payments" });
+    }
+    res.json(result || []);
+  });
+});
+
 module.exports = router;

@@ -1,12 +1,32 @@
+/**
+ * STUDENT ROUTES
+ *
+ * Handles student-related operations and data retrieval.
+ * Supports different access levels for Students, Wardens, and Admins.
+ *
+ * Endpoints:
+ * - GET /api/students - Get all students (Warden/Admin only)
+ * - GET /api/students/details - Get logged-in student's details with room/hostel info
+ * - GET /api/students/complaints - Get student complaints (Admin/Warden only)
+ *
+ * Authentication: JWT required for all endpoints
+ * Role-based Access: Different endpoints for different user roles
+ */
+
 const express = require("express");
 const router = express.Router();
-const db = require("../config/db");
+const db = require("../config/db");                    // Database connection
+const auth = require("../middleware/authMiddleware");  // JWT authentication
+const role = require("../middleware/roleMiddleware");  // Role-based access control
+const notifService = require("../utils/notificationService"); // Notification service
 
-const auth = require("../middleware/authMiddleware");
-const role = require("../middleware/roleMiddleware");
-const notifService = require("../utils/notificationService");
-
-// GET all students (Restricted to Warden/Admin)
+/**
+ * GET ALL STUDENTS
+ * GET /api/students
+ *
+ * Returns complete list of all students in the system.
+ * Restricted to Wardens and Admins for privacy and security.
+ */
 router.get("/", auth, role("Warden", "Admin"), (req, res) => {
   db.query("SELECT * FROM student", (err, result) => {
     if (err) {
@@ -16,12 +36,25 @@ router.get("/", auth, role("Warden", "Admin"), (req, res) => {
   });
 });
 
-// GET logged-in student with room and hostel details
+/**
+ * GET STUDENT DETAILS
+ * GET /api/students/details
+ *
+ * Returns detailed information for the currently logged-in student.
+ * Includes room allocation, hostel details, and occupancy information.
+ *
+ * Features:
+ * - Automatic fee reminder notifications for pending dues
+ * - Room and hostel information via LEFT JOINs
+ * - Fallback login ID handling
+ */
 router.get("/details", auth, role("Student"), (req, res) => {
-  // Try login_id first (roll_number), fallback to reference_id
+  // EXTRACT STUDENT IDENTIFIER
+  // Try login_id first (roll_number), fallback to reference_id for compatibility
   const roll_number = req.user.login_id || req.user.reference_id;
 
-  // Use LEFT JOIN so students without rooms don't get 404s
+  // COMPREHENSIVE STUDENT QUERY
+  // LEFT JOIN ensures students without rooms still get basic info
   const query = `
     SELECT s.student_id, s.name, s.roll_number, s.gender, s.phone, s.email,
            r.room_number, r.capacity,
@@ -43,17 +76,28 @@ router.get("/details", auth, role("Student"), (req, res) => {
 
     const student = result[0];
 
-    // Auto fee reminder notifications for pending dues, once per session.
+    // AUTO-GENERATE FEE REMINDER NOTIFICATIONS
+    // Creates notifications for pending dues (once per session)
     try {
       await notifService.createFeeReminderForStudent(student.student_id);
     } catch (notifyErr) {
       console.error("Fee-reminder notification creation failed:", notifyErr.message);
+      // Continue with response even if notification fails
     }
 
     res.json(student);
   });
 });
-// LEFT JOIN: Students with or without complaints
+
+/**
+ * GET STUDENT COMPLAINTS
+ * GET /api/students/complaints
+ *
+ * Returns complaints data joined with student information.
+ * Used by Wardens and Admins to view complaint status across students.
+ *
+ * LEFT JOIN ensures all students are included, even those without complaints.
+ */
 router.get("/complaints", auth, role("Admin", "Warden"), (req, res) => {
   const query = `
     SELECT s.student_id, s.name,
@@ -70,4 +114,7 @@ router.get("/complaints", auth, role("Admin", "Warden"), (req, res) => {
     res.json(result);
   });
 });
+
+// EXPORT ROUTER
+// Makes student routes available for mounting in main server.js
 module.exports = router;
