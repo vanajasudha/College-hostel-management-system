@@ -1,0 +1,258 @@
+/* ─── Layout Shell ──────────────────────────────────────────────── */
+.dashboard-layout {
+    display: flex;
+    height: 100vh;
+    overflow: hidden;
+    background: #f1f5f9;
+    font-family: 'Inter', 'Segoe UI', sans-serif;
+}
+
+.main-content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    min-width: 0;
+}
+
+/* ─── Topbar ────────────────────────────────────────────────────── */
+.topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 28px;
+    height: 62px;
+    background: #ffffff;
+    border-bottom: 1px solid #e2e8f0;
+    flex-shrink: 0;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    box-shadow: 0 1px 8px rgba(15, 23, 42, 0.07);
+}
+
+.topbar-left {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+}
+
+.topbar-title {
+    font-size: 16px;
+    font-weight: 700;
+    color: #0f172a;
+    margin: 0;
+    letter-spacing: -0.2px;
+}
+
+.topbar-right {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+/* Bell / icon button */
+.topbar-icon-btn {
+    position: relative;
+    background: #f1f5f9;
+    border: 1px solid #e2e8f0;
+    width: 38px;
+    height: 38px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
+    color: #475569;
+    cursor: pointer;
+    transition: background 0.18s, color 0.18s, border-color 0.18s;
+}
+
+.topbar-icon-btn:hover {
+    background: #e2e8f0;
+    border-color: #cbd5e1;
+    color: #1e293b;
+}
+
+.notif-dot {
+    position: absolute;
+    top: 3px;
+    right: 3px;
+    min-width: 17px;
+    height: 17px;
+    background: #ef4444;
+    border-radius: 9999px;
+    border: 2px solid #fff;
+    color: #ffffff;
+    font-size: 9px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1px;
+    line-height: 1;
+}
+
+/* User badge */
+.topbar-user {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 5px 12px 5px 5px;
+    border-radius: 12px;
+    border: 1px solid #e2e8f0;
+    cursor: pointer;
+    transition: background 0.18s, border-color 0.18s;
+    user-select: none;
+    background: #f8fafc;
+}
+
+.topbar-user:hover {
+    background: #f1f5f9;
+    border-color: #cbd5e1;
+}
+
+.topbar-avatar {
+    width: 34px;
+    height: 34px;
+    border-radius: 9px;
+    background: linear-gradient(135deg, #2563eb, #7c3aed);
+    color: white;
+    font-size: 14px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.topbar-user-info {
+    display: flex;
+    flex-direction: column;
+    line-height: 1.25;
+}
+
+.topbar-username {
+    font-size: 13.5px;
+    font-weight: 600;
+    color: #1e293b;
+}
+
+.topbar-role {
+    font-size: 11px;
+    color: #64748b;
+    font-weight: 500;
+}
+
+.chevron {
+    font-size: 15px;
+    color: #94a3b8;
+    transition: transform 0.2s;
+}
+
+.chevron.open {
+    transform: rotate(180deg);
+}
+
+/* Dropdown */
+.topbar-dropdown {
+    position: absolute;
+    top: calc(100% + 8px);
+    right: 0;
+    background: #ffffff;
+    border-radius: 14px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.14), 0 2px 8px rgba(0,0,0,0.06);
+    border: 1px solid #e2e8f0;
+    min-width: 175px;
+    overflow: hidden;
+    z-index: 200;
+    animation: dropIn 0.16s ease;
+}
+
+@keyframes dropIn {
+    from { opacity: 0; transform: translateY(-6px) scale(0.97); }
+    to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.topbar-dropdown button {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    background: none;
+    border: none;
+    padding: 12px 16px;
+    font-size: 13.5px;
+    color: #334155;
+    cursor: pointer;
+    text-align: left;
+    transition: background 0.14s;
+    font-family: 'Inter', sans-serif;
+    font-weight: 500;
+}
+
+.topbar-dropdown button:hover {
+    background: #f8fafc;
+    color: #0f172a;
+}
+
+.topbar-dropdown button.logout {
+    color: #dc2626;
+}
+
+.topbar-dropdown button.logout:hover {
+    background: #fef2f2;
+}
+
+.dropdown-divider {
+    height: 1px;
+    background: #f1f5f9;
+    margin: 3px 0;
+}
+
+/* ─── Page Content ──────────────────────────────────────────────── */
+.dashboard-container {
+    flex: 1;
+    overflow-y: auto;
+    padding: 28px 30px;
+    background: #f1f5f9;
+}
+
+.dashboard-container::-webkit-scrollbar { width: 6px; }
+.dashboard-container::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 6px; }
+.dashboard-container::-webkit-scrollbar-track { background: transparent; }
+
+/* ─── Shared Close Button ───────────────────────────────────────── */
+.page-close-btn {
+    flex-shrink: 0;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    border: 1px solid #e2e8f0;
+    background: #f8fafc;
+    color: #64748b;
+    font-size: 20px;
+    line-height: 1;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.18s, color 0.18s, border-color 0.18s, transform 0.15s;
+    align-self: flex-start;
+    margin-top: 4px;
+}
+
+.page-close-btn:hover {
+    background: #fef2f2;
+    color: #dc2626;
+    border-color: #fecaca;
+    transform: scale(1.08) rotate(90deg);
+}
+
+/* ─── Responsive ────────────────────────────────────────────────── */
+@media (max-width: 768px) {
+    .topbar { padding: 0 16px; }
+    .topbar-title { font-size: 14px; }
+    .topbar-user-info { display: none; }
+    .dashboard-container { padding: 16px; }
+}
